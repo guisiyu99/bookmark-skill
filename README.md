@@ -55,24 +55,115 @@ This skill documents those traps and gives the one verified-working cleanup path
 > Example outcome (a real case, not a prescription): 547 → 414, with 6 pinned
 > bookmarks + 7 category folders. Your numbers and structure will differ.
 
-## 快速开始 / Quick start
+## 使用方法 / How to use
+
+> 全程在本地跑，不联网、不删你的真实书签，直到你手动覆盖。
+> Everything runs locally. Your real Bookmarks file is never touched until you
+> manually overwrite it.
+
+### 0. 前置准备 / Before you start
 
 ```bash
-# 1. 分析当前书签（树 + 重复 + 陈旧）
-# 1. Analyze current bookmarks (tree + dupes + stale)
+# 0.1 备份当前的 Bookmarks 文件（保命用）
+# 0.1 Back up your live Bookmarks file (safety net)
+cp ~/Library/Application\ Support/Google/Chrome/Default/Bookmarks ~/Desktop/Bookmarks.bak.before
+
+# 0.2 确认同步已关闭（关键！否则整理会被云端旧数据覆盖）
+# 0.2 Confirm Sync is OFF — otherwise the cloud merges your old bookmarks back in
+#     → 读 references/chrome_sync_mechanics.md，并在 Chrome 设置里确认「书签同步」为 OFF
+#     → Read references/chrome_sync_mechanics.md, and in Chrome Settings confirm
+#       bookmark Sync is OFF
+```
+
+### 1. 诊断当前书签 / Diagnose
+
+```bash
+# 打印书签树 + 每层数量（不改动任何文件）
+# Print the folder tree with per-folder counts
 python3 scripts/analyze_bookmarks.py --tree
 
-# 2. 列出失效/可删书签（仅供参考，不会删除）
-# 2. List dead/deletable bookmarks (review only, no deletion)
-python3 scripts/find_dead_bookmarks.py
+# 列出超老 / 从未使用的书签（默认 2000 天，可调）
+# List very-old / never-used bookmarks (default 2000 days, adjustable)
+python3 scripts/analyze_bookmarks.py --stale-days 2000
 
-# 3. 编写目标结构 target.json，然后生成干净 Bookmarks
-# 3. Write a target.json, then generate a clean Bookmarks file
-python3 scripts/reorganize_bookmarks.py --target target.json --output Bookmarks --backup
-
-# 4. 写入前务必先读 references/chrome_sync_mechanics.md，确认同步已关
-# 4. Before writing, read references/chrome_sync_mechanics.md and confirm Sync is OFF
+# 指定非默认路径 / Point at a non-default profile
+python3 scripts/analyze_bookmarks.py --path ~/Library/Application\ Support/Google/Chrome/Profile\ 1/Bookmarks
 ```
+输出：书签总数、重复 URL 分组、陈旧项清单。
+
+### 2. 列出失效书签 / Find dead bookmarks
+
+```bash
+python3 scripts/find_dead_bookmarks.py
+```
+对照 [`references/dead_domains.md`](references/dead_domains.md) 人工确认哪些该删。
+**脚本只列不删**，删除需你点头。
+The script lists only — it never deletes. You decide what to remove.
+
+### 3. 设计目标结构 / Design the target structure
+
+新建一个 `target.json`，描述你想要的分类（`topLevel` 是书签栏顶层的单列链接，
+`folders` 是分类文件夹，可任意嵌套）：
+
+```json
+{
+  "topLevel": [
+    {"name": "Google", "url": "https://www.google.com/"},
+    {"name": "Gmail",  "url": "https://mail.google.com/"}
+  ],
+  "folders": {
+    "AI工具": {
+      "AI对话": [
+        {"name": "ChatGPT", "url": "https://chat.openai.com/"},
+        {"name": "Claude",  "url": "https://claude.ai/"}
+      ]
+    },
+    "设计素材": { "图标": [], "字体": [] }
+  }
+}
+```
+> 你的分类随你定，这只是一个最小示例。
+> Your taxonomy is yours — this is just a minimal example.
+
+### 4. 生成干净的 Bookmarks 文件 / Generate a clean file
+
+```bash
+python3 scripts/reorganize_bookmarks.py \
+    --target target.json \
+    --output Bookmarks.clean \
+    --backup
+```
+- 生成 `Bookmarks.clean`（一份新的、合法的 `Bookmarks` JSON），**不会**动你真实的文件。
+- `--backup` 会在覆盖同名文件前先备份。
+- Produces `Bookmarks.clean` (a fresh, valid Bookmarks JSON) — your live file is untouched.
+
+### 5. 写入并清缓存（仅在同步已关时）/ Write + clear cache (Sync OFF only)
+
+```bash
+# 5.1 完全退出 Chrome —— 正常退出（Cmd+Q），千万不要 pkill / kill -9
+#     正常退出才不会丢掉标签页分组等会话状态
+# 5.1 Fully quit Chrome with Cmd+Q (NOT pkill / kill -9) so Tab Groups survive
+
+# 5.2 用生成好的文件覆盖真实 Bookmarks
+# 5.2 Overwrite the live Bookmarks with the generated file
+cp Bookmarks.clean ~/Library/Application\ Support/Google/Chrome/Default/Bookmarks
+
+# 5.3 清空同步缓存（清掉云端旧数据的本地残留），否则重启可能被合并回来
+# 5.3 Clear the Sync cache so stale cloud data can't merge back in on launch
+rm -rf ~/Library/Application\ Support/Google/Chrome/Default/Sync\ Data/LevelDB
+
+# 5.4 重新打开 Chrome，检查书签栏
+# 5.4 Reopen Chrome and check the bookmark bar
+```
+
+### 6. 导出 HTML 备份 / Export an HTML backup
+
+在 Chrome `chrome://bookmarks` → ⋮ → **导出书签** 存一份 HTML，随时可再导入。
+也可把 `target.json` 与 `Bookmarks.clean` 留档。
+In Chrome `chrome://bookmarks` → ⋮ → **Export bookmarks** to keep a re-importable HTML.
+
+> 完整踩坑说明见下方「关键雷区」与 [`references/chrome_sync_mechanics.md`](references/chrome_sync_mechanics.md)。
+> Full pitfalls in the gotchas table below and `references/chrome_sync_mechanics.md`.
 
 ## 关键雷区（务必先读）/ Critical gotchas (read first)
 
